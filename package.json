@@ -1,0 +1,14 @@
+{
+    "name": "hyperbeast-server",
+    "version": "1.0.0",
+    "description": "Server for code interview",
+    "main": "index.js",
+    "private": true,
+    "scripts": {
+        "server": "php bin/console server:run *:4000"
+    },
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {},
+    "dependencies": {}
+}
