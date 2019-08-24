@@ -5,7 +5,8 @@
     "main": "index.js",
     "private": true,
     "scripts": {
-        "server": "php bin/console server:run *:4000"
+        "server": "php bin/console server:run 127.0.0.1:4000",
+        "queue": "php bin/console messenger:consume voter -vvv"
     },
     "author": "",
     "license": "ISC",

@@ -2,28 +2,36 @@
 namespace App\Controller;
 
 use App\Entity\PollEntry;
+use App\MessageQueue\QueryVoteMessage;
+use Memcached;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\Cache\Adapter\MemcachedAdapter;
+use Symfony\Contracts\Cache\ItemInterface;
 
 class RESTController extends AbstractController {
+    const CACHE_NAMESPACE = "hype-beast.poll-app";
 
     /**
      * @Route("/api/submit", methods={"POST"})
      * @param Request $request
      * @param ValidatorInterface $validator
      * @return JsonResponse
+     * @throws \ErrorException
+     * @throws \Psr\Cache\InvalidArgumentException
      */
     public function postResult(Request $request, ValidatorInterface $validator) {
-        $arr = json_decode($request->getContent(), true);
-        if (!$arr) {
+        $labels = array_unique(json_decode($request->getContent(), true));
+        if (!$labels) {
             throw new BadRequestHttpException("Malformed JSON.");
         }
-        $errors = $validator->validate($arr, new Assert\All([
+        $errors = $validator->validate($labels, new Assert\All([
             new Assert\Range([
                 "min" => 1,
                 "max" => 5
@@ -32,38 +40,100 @@ class RESTController extends AbstractController {
         if (count($errors)) {
             throw new BadRequestHttpException("Invalid request.");
         }
-        $em = $this->getDoctrine()->getManager();
-        $repo = $this->getDoctrine()->getRepository(PollEntry::class);
-        // Find all, but order by label
-        $entries = $repo->findBy([], ['label' => 'ASC']);
-        foreach ($arr as $label) {
-            /* @var PollEntry $entry */
-            // Label is 1 to 5, offset by 1
-            $entry = $entries[$label - 1];
-            $entry->setCount($entry->getCount() + 1);
-            $em->persist($entry);
-        }
-        $rtn = array_map(function(PollEntry $entry) {
-            return $this->normalize($entry);
-        }, $entries);
-        $em -> flush();
-        return new JsonResponse($rtn);
+        $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
+        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
+        $this->dispatchMessage(new QueryVoteMessage($labels));
+        $adaptor->delete("result");
+        return new JsonResponse([
+            "status" => "ok"
+        ]);
     }
 
+    /**
+     * @Route("/api/cache", methods={"GET"})
+     * @return JsonResponse
+     * @throws \ErrorException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
+    public function getCache() {
+        $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
+        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
+        /* @var ItemInterface $cache */
+        $cache = $adaptor->get("result", function (ItemInterface $item){
+            return $this->initializeCache();
+        });
+        $cache = json_decode($cache, true);
+        return new JsonResponse($cache);
+    }
+
+    /**
+     * @Route("/api/cache", methods={"POST"})
+     * @return JsonResponse
+     * @throws \ErrorException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
+    public function flushCache() {
+        $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
+        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
+        $cache = $adaptor->get("result", function (ItemInterface $item){
+            return $this->initializeCache();
+        });
+        $cache = json_decode($cache, true);
+        $this->dispatchMessage(new QueryVoteMessage($cache["labels"]));
+        $adaptor->delete("result");
+        return new JsonResponse([
+            "status" => "ok"
+        ]);
+    }
+
+    /**
+     * @Route("/api/cache", methods={"DELETE"})
+     * @throws \ErrorException
+     * @throws \Psr\Cache\InvalidArgumentException
+     */
+    public function deleteCache() {
+        $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
+        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
+        $adaptor->delete("result");
+        return new JsonResponse([
+            "status" => "ok"
+        ]);
+    }
     /**
      * @Route("/api/result", methods={"GET"})
      * @return JsonResponse
      */
     public function getResult() {
-        $repo = $this->getDoctrine()->getRepository(PollEntry::class);
-        $entries = $repo->findAll();
-        $rtn = array_map(function(PollEntry $entry) {
-            return $this->normalize($entry);
-        }, $entries);
-        return new JsonResponse($rtn);
+        // https://symfony.com/doc/current/messenger/handler_results.html
+//        $envelope = $this->dispatchMessage(new QueryVoteMessage([]));
+        /* @var HandledStamp $handledStamp */
+//        $handledStamp = $envelope->last(HandledStamp::class);
+//        $result = $handledStamp->getResult();
+        return new JsonResponse([
+            "status" => "ok"
+        ]);
     }
 
-    public function normalize(PollEntry $entry) {
+    private function initializeCache() {
+        $repo = $this->getDoctrine()->getRepository(PollEntry::class);
+        $entries = $repo->findBy([], ['label' => 'ASC']);
+        $entries = array_map(function (PollEntry $entry) {
+            return $this->normalize($entry);
+        }, $entries);
+        return json_encode([
+            "hits" => 1,
+            "labels" => [
+                "1" => 0,
+                "2" => 0,
+                "3" => 0,
+                "4" => 0,
+                "5" => 0
+            ],
+            "result" => $entries
+        ]);
+    }
+
+    private function normalize(PollEntry $entry) {
         return [
             "label" => $entry->getLabel(),
             "count" => $entry->getCount()
