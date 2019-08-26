@@ -5,24 +5,25 @@ namespace App\MessageQueue;
 
 
 class QueryVoteMessage {
-    private $json;
-    public function __construct(array $json) {
-        $this->json = $json;
+    private $labels;
+    public function __construct(array $labels) {
+        $this->labels = $labels;
     }
 
     /**
-     * @return array
+     * @return mixed
      */
-    public function getJson(): array {
-        return $this->json;
+    public function getLabels() {
+        return $this->labels;
     }
 
     /**
-     * @param array $json
+     * @param mixed $labels
      */
-    public function setJson(array $json): void {
-        $this->json = $json;
+    public function setLabels($labels): void {
+        $this->labels = $labels;
     }
+
 
 
 }

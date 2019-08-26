@@ -23,14 +23,11 @@ class QueryVoteHandler implements MessageHandlerInterface {
     }
 
     public function __invoke(QueryVoteMessage $message) {
-        $repo = $this->em->getRepository(PollEntry::class);
-        // Find all, but order by label
-        $entries = $repo->findBy([], ['label' => 'ASC']);
-        foreach ($message->getJson() as $label) {
+        foreach ($message->getLabels() as $label) {
             /* @var PollEntry $entry */
             // Label is 1 to 5, offset by 1
-            $entry = $entries[$label - 1];
-            $entry->setCount($entry->getCount() + 1);
+            $entry = new PollEntry();
+            $entry->setLabel($label);
             $this->em->persist($entry);
         }
         $this->em->flush();
