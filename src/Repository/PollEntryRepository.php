@@ -12,6 +12,7 @@ use PDO;
 class PollEntryRepository extends EntityRepository {
     /**
      * @throws DBALException
+     * Tally the poll result and store in a dto object.
      */
     public function getPollResult() {
         $connection = $this->getEntityManager()->getConnection();

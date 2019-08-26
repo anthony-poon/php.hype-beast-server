@@ -32,10 +32,7 @@ class PollResult implements JsonSerializable {
     public function jsonSerialize() {
         $rtn = [];
         foreach ($this->results as $label => $count) {
-            $rtn[] = [
-                "label" => (int) $label,
-                "count" => (int) $count
-            ];
+            $rtn[(int) $label] = (int) $count;
         }
         return $rtn;
     }

@@ -1,14 +1,18 @@
 <?php
 namespace App\Controller;
 
+use App\DTO\PollResult;
 use App\Entity\PollEntry;
 use App\MessageQueue\QueryVoteMessage;
-use Memcached;
+use App\Repository\PollEntryRepository;
+use Doctrine\DBAL\DBALException;
+use ErrorException;
+use Psr\Cache\InvalidArgumentException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -23,10 +27,13 @@ class RESTController extends AbstractController {
      * @param Request $request
      * @param ValidatorInterface $validator
      * @return JsonResponse
-     * @throws \ErrorException
-     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws ErrorException
+     * @throws InvalidArgumentException
+     *
+     * Read request content and send a message to message queue. Read the cache to see the current / cached poll result then increment the result
      */
     public function postResult(Request $request, ValidatorInterface $validator) {
+        // Validation
         $labels = array_unique(json_decode($request->getContent(), true));
         if (!$labels) {
             throw new BadRequestHttpException("Malformed JSON.");
@@ -41,102 +48,45 @@ class RESTController extends AbstractController {
             throw new BadRequestHttpException("Invalid request.");
         }
         $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
-        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
+        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, $_ENV['CACHE_LIFE_TIME']);
+        /* @var PollResult $pollResult */
+        $pollResult = $adaptor->get("result", function (ItemInterface $item){
+            // This will only run on cache miss
+            return $this->initializeCache();
+        });
+        foreach ($labels as $label) {
+            // Increment the cache result
+            $count = $pollResult->getResultByLabel($label) + 1;
+            $pollResult->setResultByLabel($label, $count);
+        }
         $this->dispatchMessage(new QueryVoteMessage($labels));
-        $adaptor->delete("result");
-        return new JsonResponse([
-            "status" => "ok"
-        ]);
+        return new JsonResponse($pollResult);
     }
 
     /**
-     * @Route("/api/cache", methods={"GET"})
+     * @Route("/api/result", methods={"GET"})
      * @return JsonResponse
-     * @throws \ErrorException
-     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws ErrorException
+     * @throws InvalidArgumentException
+     *
+     * Read the cached poll result
      */
-    public function getCache() {
+    public function getResult() {
         $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
-        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
-        /* @var ItemInterface $cache */
+        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, $_ENV['CACHE_LIFE_TIME']);
+        /* @var PollResult $cache */
         $cache = $adaptor->get("result", function (ItemInterface $item){
             return $this->initializeCache();
         });
-        $cache = json_decode($cache, true);
         return new JsonResponse($cache);
     }
 
     /**
-     * @Route("/api/cache", methods={"POST"})
-     * @return JsonResponse
-     * @throws \ErrorException
-     * @throws \Psr\Cache\InvalidArgumentException
+     * @throws DBALException
      */
-    public function flushCache() {
-        $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
-        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
-        $cache = $adaptor->get("result", function (ItemInterface $item){
-            return $this->initializeCache();
-        });
-        $cache = json_decode($cache, true);
-        $this->dispatchMessage(new QueryVoteMessage($cache["labels"]));
-        $adaptor->delete("result");
-        return new JsonResponse([
-            "status" => "ok"
-        ]);
-    }
-
-    /**
-     * @Route("/api/cache", methods={"DELETE"})
-     * @throws \ErrorException
-     * @throws \Psr\Cache\InvalidArgumentException
-     */
-    public function deleteCache() {
-        $memeCache = MemcachedAdapter::createConnection($_ENV['MEMCACHE_ADDRESS']);
-        $adaptor = new MemcachedAdapter($memeCache, self::CACHE_NAMESPACE, 0);
-        $adaptor->delete("result");
-        return new JsonResponse([
-            "status" => "ok"
-        ]);
-    }
-    /**
-     * @Route("/api/result", methods={"GET"})
-     * @return JsonResponse
-     */
-    public function getResult() {
-        // https://symfony.com/doc/current/messenger/handler_results.html
-//        $envelope = $this->dispatchMessage(new QueryVoteMessage([]));
-        /* @var HandledStamp $handledStamp */
-//        $handledStamp = $envelope->last(HandledStamp::class);
-//        $result = $handledStamp->getResult();
-        return new JsonResponse([
-            "status" => "ok"
-        ]);
-    }
-
     private function initializeCache() {
+        /* @var PollEntryRepository $repo */
         $repo = $this->getDoctrine()->getRepository(PollEntry::class);
-        $entries = $repo->findBy([], ['label' => 'ASC']);
-        $entries = array_map(function (PollEntry $entry) {
-            return $this->normalize($entry);
-        }, $entries);
-        return json_encode([
-            "hits" => 1,
-            "labels" => [
-                "1" => 0,
-                "2" => 0,
-                "3" => 0,
-                "4" => 0,
-                "5" => 0
-            ],
-            "result" => $entries
-        ]);
-    }
-
-    private function normalize(PollEntry $entry) {
-        return [
-            "label" => $entry->getLabel(),
-            "count" => $entry->getCount()
-        ];
+        return $repo->getPollResult();
     }
 }

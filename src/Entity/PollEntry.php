@@ -6,7 +6,7 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * Class PullEntry
  * @package App\Entity
- * @ORM\Entity()
+ * @ORM\Entity(repositoryClass="App\Repository\PollEntryRepository")
  * @ORM\Table()
  */
 class PollEntry {
@@ -23,11 +23,6 @@ class PollEntry {
      * @ORM\Column(type="integer")
      */
     private $label;
-    /**
-     * @var integer
-     * @ORM\Column(type="integer")
-     */
-    private $count;
 
     /**
      * @return int
@@ -49,20 +44,4 @@ class PollEntry {
     public function setLabel(int $label): void {
         $this->label = $label;
     }
-
-    /**
-     * @return int
-     */
-    public function getCount(): int {
-        return $this->count;
-    }
-
-    /**
-     * @param int $count
-     */
-    public function setCount(int $count): void {
-        $this->count = $count;
-    }
-
-
 }
