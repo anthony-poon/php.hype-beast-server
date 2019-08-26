@@ -109,3 +109,31 @@ It is possible to scale further on the request processing rate:
 1. Create a Round Robin DNS records
 2. Spawn multiple web server to consume HTTP request
 3. Increase the messenger consumer records  
+
+## REST API
+
+### `GET /api/result`
+Result the current poll result.
+
+Content Type: `application/json`
+
+Response format:
+
+    {
+        <label_1>: <count_1>,
+        <label_2>: <count_2>.
+        ...
+    }
+    
+### `POST /api/submit`
+Cast votes to the poll:
+
+Content Type: `application/json`
+
+Request format
+
+    [
+        <Integer: label>,
+        <Integer: label>,
+        ...
+    ]
