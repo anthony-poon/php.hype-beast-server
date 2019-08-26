@@ -15,7 +15,7 @@ This project is built for hype-beast code challenge.
 
     `composer install`
    
-2. Create a database, database user and it's password.
+2. Create a database, database user and its password.
 3. Copy the `.env` file to `.env.local`
 4. Update DATABASE_URL. The format should be 
 
@@ -68,10 +68,10 @@ Because of time constraints, currently only we have no test.
 The following method is used to handle the C1K challenge:
 
 1. The controller received an HTTP POST request
-2. The controller send a message to the message queue
-3. The controller queue the memcache for the poll result, if no cache is present, query the database and create a cache. The life time of the cache is specified by the CACHE_LIFE_TIME ( default 5 )env variable.
+2. The controller sends a message to the message queue
+3. The controller queue the memcache for the poll result, if no cache is present, query the database and create a cache. The life time of the cache is specified by the CACHE_LIFE_TIME (default 5) env variable.
    
-   Doing so reduce the amount fo SELECT query. The cache will only be updated after the cache expired. So at maximum should have only 1 SELECT query per 5 sec.
+   Doing so reduce the amount of SELECT query. The cache will only be updated after the cache expired. So, at maximum should have only 1 SELECT query per 5 sec.
  
    The resulting query is at max 5 seconds behind. If true real time is needed, cache needs to be clear after message send, or disabled altogether. 
    
@@ -137,3 +137,22 @@ Request format
         <Integer: label>,
         ...
     ]
+
+## Structure
+
+    
+    src
+    +-- Cotroller
+    |    +-- DefaultController
+    |    +-- RESTController     [Rest API Entry point]
+    |        +-- postResult     [Send message to message queue on POST request]
+    |        +-- getResult      [Return poll result as per requirement]
+    +-- DTO
+    |   +-- PollResult          [DTO for poll result]
+    +-- Entry
+    |   +-- PollEntry           [Database entity. Each entity represent a vote]
+    +-- MessageQueue
+    |   +-- QueryVoteHandler    [Messenage worker. Consume messenage from message queue and insert into database]
+    |   +-- QueryVoteMessage    [Store Message contents]
+    +-- Repository
+        +-- PollEntryRepository [Extents standards repository. getPollResult returns a PollResult DTO]
