@@ -109,6 +109,7 @@ It is possible to scale further on the request processing rate:
 1. Create a Round Robin DNS records
 2. Spawn multiple web server to consume HTTP request
 3. Increase the messenger consumer records  
+4. Messenger worker currently update database immediately upon consuming message. It can be optimized by caching multiple operations and update in batch.
 
 ## REST API
 
@@ -156,3 +157,16 @@ Request format
     |   +-- QueryVoteMessage    [Store Message contents]
     +-- Repository
         +-- PollEntryRepository [Extents standards repository. getPollResult returns a PollResult DTO]
+        
+## Assumption
+
+The project have the following assumptions:
+
+- The project require displaying "real-time" data. However, since caching is involved, there is at max 5 seconds lag with the most recent data. I assume this is good enough for the project requirement
+
+## Limitation
+
+No effort have been placed to optimized database read / write. In high load it could cause problem. The following strategy can be consider to handle that:
+
+- Using database cluster
+- Cache database write operation and write in batch
